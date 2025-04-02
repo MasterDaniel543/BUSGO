@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Container, Typography, Grid, Paper, Button, Badge } from '@mui/material';
-import { PeopleAlt, DirectionsBus, Warning, Logout } from '@mui/icons-material';
+import { PeopleAlt, DirectionsBus, Warning, Logout, Schedule } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import Cookies from 'js-cookie';
 import api from '../../services/api';
@@ -85,7 +85,19 @@ const AdminDashboard = () => {
             <DirectionsBus className="dashboard-icon" />
             <Typography variant="h4">Gestión de Camiones</Typography>
             <Typography variant="body1">
-              Administre la flota de camiones y rutas
+              Registre y administre la flota de camiones
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <Paper 
+            className="dashboard-option" 
+            onClick={() => navigate('/admin/asignaciones')}
+          >
+            <Schedule className="dashboard-icon" />
+            <Typography variant="h4">Asignación de Conductores</Typography>
+            <Typography variant="body1">
+              Asigne conductores, horarios y rutas a los camiones
             </Typography>
           </Paper>
         </Grid>

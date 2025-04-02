@@ -2,13 +2,14 @@ import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Cookies from 'js-cookie';
 
-import Login from './components/Login/Login';
+import Login from './components/Login/Login.jsx';
 import RecuperarPassword from './components/PasswordRecovery/RecuperarPassword';
 import Pasajero from './components/Pasajero/DashboardPasajero';
 import Conductor from './components/Conductor/DashboardConductor';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import GestionUsuarios from './components/Admin/GestionUsuarios';
 import GestionCamiones from './components/Admin/GestionCamiones';
+import AsignacionConductores from './components/Admin/AsignacionConductores';
 import GestionIncidencias from './components/Admin/GestionIncidencias';
 import './App.css';
 
@@ -92,6 +93,14 @@ const App = () => {
           element={
             <ProtectedRoute allowedRole="admin">
               <GestionCamiones />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/asignaciones"
+          element={
+            <ProtectedRoute allowedRole="admin">
+              <AsignacionConductores />
             </ProtectedRoute>
           }
         />

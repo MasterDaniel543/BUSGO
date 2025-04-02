@@ -20,51 +20,58 @@ import {
   DialogContent,
   DialogActions,
   Pagination,
+  FormControl,
+  InputLabel,
+  Box
 } from '@mui/material';
-import { Edit, Delete, Assessment, Close, Save, Cancel } from '@mui/icons-material';
+import { Edit, Delete, Close } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import '../../css/Admin/GestionCamiones.css';
-import { FormControl, InputLabel } from '@mui/material';
 
 const GestionCamiones = () => {
   const navigate = useNavigate();
   const [camiones, setCamiones] = useState([]);
-  const [conductoresDisponibles, setConductoresDisponibles] = useState([]);
   const [nuevoCamion, setNuevoCamion] = useState({ 
     placa: '', 
     ruta: '', 
-    estado: 'activo', 
-    conductor: '', 
+    estado: 'activo',
     horarioInicio: '05:00',
     horarioFin: '22:00',
-    diasTrabajo: ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'], // Asegurarse que sea array
-    imagen: '' 
+    diasTrabajo: ['lunes', 'martes', 'miercoles', 'jueves', 'viernes']
   });
   const [busquedaCamiones, setBusquedaCamiones] = useState('');
   const [camionEditando, setCamionEditando] = useState(null);
   const [errores, setErrores] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [dialogoEliminar, setDialogoEliminar] = useState({ open: false, tipo: '', id: '' });
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [paginaCamiones, setPaginaCamiones] = useState(1);
+  const [filtroEstado, setFiltroEstado] = useState('todos'); // Nuevo estado para filtrar por estado
   const elementosPorPagina = 5;
-  const [estadisticasDialog, setEstadisticasDialog] = useState({ open: false, camion: null });
 
   useEffect(() => {
     fetchData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Función para ordenar camiones por el número de ruta (de menor a mayor)
+  const ordenarCamiones = (camionesArray) => {
+    return [...camionesArray].sort((a, b) => {
+      // Extraer la parte numérica de la ruta si existe
+      const numA = a.ruta.match(/(\d+)/)?.[1] || '0';
+      const numB = b.ruta.match(/(\d+)/)?.[1] || '0';
+      
+      // Convertir a números enteros y comparar (orden ascendente)
+      return parseInt(numA, 10) - parseInt(numB, 10);
+    });
+  };
+
+  // Modify the fetchData function to sort camiones after formatting
   const fetchData = async () => {
     try {
-      const [camionesResponse, conductoresResponse] = await Promise.all([
-        api.get('/camiones'),
-        api.get('/conductores-disponibles')
-      ]);
+      const camionesResponse = await api.get('/camiones');
 
       // Procesar los datos que vienen del servidor
       const camionesFormateados = camionesResponse.data.map(camion => {
-        // Usar directamente los valores que vienen del servidor
-        // ya que deberían estar descifrados por el backend
         return {
           ...camion,
           placa: camion.placa || 'Sin placa',
@@ -72,9 +79,9 @@ const GestionCamiones = () => {
         };
       });
 
-      console.log('Camiones recibidos:', camionesFormateados); // Para debugging
-      setCamiones(camionesFormateados);
-      setConductoresDisponibles(conductoresResponse.data);
+      // Sort the formatted trucks
+      const camionesSorted = ordenarCamiones(camionesFormateados);
+      setCamiones(camionesSorted);
     } catch (error) {
       console.error('Error fetching data:', error);
       setSnackbar({
@@ -94,105 +101,127 @@ const GestionCamiones = () => {
     if (!/^[A-Z]{3}\d{3}[A-Z]$/.test(nuevoCamion.placa)) nuevosErrores.placa = 'Formato de placa no válido (ej: ABP468B)';
     if (!nuevoCamion.ruta.trim()) nuevosErrores.ruta = 'La ruta es requerida';
     if (nuevoCamion.ruta.length < 2) nuevosErrores.ruta = 'La ruta debe tener al menos 2 caracteres';
-    if (!nuevoCamion.diasTrabajo || nuevoCamion.diasTrabajo.length === 0) {
-      nuevosErrores.diasTrabajo = 'Debe seleccionar al menos un día de trabajo';
-    }
     setErrores(nuevosErrores);
     return Object.keys(nuevosErrores).length === 0;
   };
 
   const agregarCamion = async () => {
-    if (!validarCamion()) return;
     try {
-      const camionData = {
-        placa: nuevoCamion.placa.trim().toUpperCase(),
-        ruta: nuevoCamion.ruta.trim().toUpperCase(),
-        estado: nuevoCamion.estado,
-        conductor: nuevoCamion.conductor || null,
-        horarioInicio: nuevoCamion.horarioInicio,
-        horarioFin: nuevoCamion.horarioFin,
-        diasTrabajo: nuevoCamion.diasTrabajo
-      };
-
-      const response = await api.post('/camiones', camionData);
-      
-      // Asegurarse de que los datos estén descifrados antes de actualizar el estado
-      const camionDescifrado = {
-        ...response.data,
-        placa: response.data.placa.toUpperCase(),
-        ruta: response.data.ruta.toUpperCase()
-      };
-
-      setCamiones([...camiones, camionDescifrado]);
-      setNuevoCamion({ 
-        placa: '', 
-        ruta: '', 
-        estado: 'activo', 
-        conductor: '',
-        horarioInicio: '05:00',
-        horarioFin: '22:00',
-        diasTrabajo: ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'], // Mantener el array
-        imagen: '' 
-      });
-      setSnackbar({ 
-        open: true, 
-        message: 'Camión agregado correctamente', 
-        severity: 'success' 
-      });
-      fetchData();
-    } catch (error) {
-      console.error('Error completo:', error);
-      console.log('Error details:', error.response?.data);
-      
-      let errorMessage = 'Error al agregar camión';
-      if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
-        errorMessage = error.response.data.errors.join(', ');
-      } else if (error.response?.data?.error) {
-        errorMessage = error.response.data.error;
-      } else if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
+      // Make sure placa follows the format: 3 uppercase letters + 3 digits + 1 uppercase letter
+      if (!/^[A-Z]{3}\d{3}[A-Z]$/.test(nuevoCamion.placa)) {
+        setSnackbar({
+          open: true,
+          message: 'Formato de placa no válido (ej: ABC123D)',
+          severity: 'error'
+        });
+        return;
       }
   
-      setSnackbar({ 
-        open: true, 
-        message: errorMessage,
-        severity: 'error' 
+      // Make sure ruta is not empty
+      if (!nuevoCamion.ruta || !nuevoCamion.ruta.trim()) {
+        setSnackbar({
+          open: true,
+          message: 'La ruta es requerida',
+          severity: 'error'
+        });
+        return;
+      }
+  
+      // Make sure estado is valid
+      if (!['activo', 'inactivo'].includes(nuevoCamion.estado)) {
+        setSnackbar({
+          open: true,
+          message: 'Estado no válido',
+          severity: 'error'
+        });
+        return;
+      }
+  
+      // Make sure horarioInicio and horarioFin are in the correct format
+      const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+      if (!timeRegex.test(nuevoCamion.horarioInicio)) {
+        setSnackbar({
+          open: true,
+          message: 'Formato de hora inicio no válido (HH:mm)',
+          severity: 'error'
+        });
+        return;
+      }
+      if (!timeRegex.test(nuevoCamion.horarioFin)) {
+        setSnackbar({
+          open: true,
+          message: 'Formato de hora fin no válido (HH:mm)',
+          severity: 'error'
+        });
+        return;
+      }
+  
+      // Make sure diasTrabajo is an array of valid days
+      const diasValidos = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+      if (!Array.isArray(nuevoCamion.diasTrabajo) || 
+          !nuevoCamion.diasTrabajo.every(dia => diasValidos.includes(dia))) {
+        setSnackbar({
+          open: true,
+          message: 'Días de trabajo no válidos',
+          severity: 'error'
+        });
+        return;
+      }
+  
+      // If all validations pass, send the request
+      const response = await api.post('/camiones', nuevoCamion);
+      
+      // Ensure we're using the decrypted values from the response
+      const camionAgregado = {
+        ...response.data,
+        placa: response.data.placa || 'Sin placa',
+        ruta: response.data.ruta || 'Sin ruta'
+      };
+      
+      // Add the new truck and sort the list
+      const camionesSorted = ordenarCamiones([...camiones, camionAgregado]);
+      setCamiones(camionesSorted);
+      
+      // Reset form and show success message
+      setNuevoCamion({
+        placa: '',
+        ruta: '',
+        estado: 'activo',
+        conductor: null,
+        horarioInicio: '05:00',
+        horarioFin: '22:00',
+        diasTrabajo: ['lunes', 'martes', 'miercoles', 'jueves', 'viernes']
+      });
+      setDialogOpen(false);
+      setSnackbar({
+        open: true,
+        message: 'Camión agregado correctamente',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.error('Error completo:', error);
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.error || 'Error al agregar camión',
+        severity: 'error'
       });
     }
   };
 
   const actualizarCamion = async (id, datosActualizados) => {
     try {
-      // Validate data before sending
       if (!datosActualizados.placa?.trim() || !datosActualizados.ruta?.trim()) {
         throw new Error('La placa y la ruta son campos requeridos');
       }
 
-      // Prepare data for update
       const datosFiltrados = {
         placa: datosActualizados.placa.trim().toUpperCase(),
         ruta: datosActualizados.ruta.trim().toUpperCase(),
         estado: datosActualizados.estado || 'activo',
-        conductor: datosActualizados.conductor?._id || datosActualizados.conductor || null,
-        horarioInicio: datosActualizados.horarioInicio || '05:00',
-        horarioFin: datosActualizados.horarioFin || '22:00',
-        diasTrabajo: Array.isArray(datosActualizados.diasTrabajo) ? 
-          datosActualizados.diasTrabajo : 
-          ['lunes', 'martes', 'miercoles', 'jueves', 'viernes']
       };
 
-      // Log request data for debugging
-      console.log('ID:', id);
-      console.log('Request data:', JSON.stringify(datosFiltrados, null, 2));
-
-      // Make the API call with proper headers
-      const response = await api.put(`/camiones/${id}`, datosFiltrados, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await api.put(`/camiones/${id}`, datosFiltrados);
       
-      // Update local state and UI
       setCamiones(prevCamiones => 
         prevCamiones.map(camion => camion._id === id ? response.data : camion)
       );
@@ -207,7 +236,6 @@ const GestionCamiones = () => {
       await fetchData();
     } catch (error) {
       console.error('Error completo:', error);
-      console.error('Error response:', error.response?.data);
       
       setSnackbar({
         open: true,
@@ -225,46 +253,52 @@ const GestionCamiones = () => {
     setDialogoEliminar({ open: false, tipo: '', id: '' });
   };
 
-const ejecutarEliminacion = async () => {
-  try {
-    await api.delete(`/camiones/${dialogoEliminar.id}`);
-    setCamiones(camiones.filter(camion => camion._id !== dialogoEliminar.id));
-    setSnackbar({
-      open: true,
-      message: 'Camión eliminado correctamente',
-      severity: 'success'
-    });
-    cerrarDialogoEliminar();
-    fetchData();
-  } catch (error) {
-    setSnackbar({
-      open: true,
-      message: error.response?.data?.error || 'Error al eliminar el camión',
-      severity: 'error'
-    });
-  }
-};
-
-  const camionesFiltrados = camiones.filter(camion =>
-    camion.placa.toLowerCase().includes(busquedaCamiones.toLowerCase()) ||
-    camion.ruta.toLowerCase().includes(busquedaCamiones.toLowerCase()) ||
-    (camion.conductor && camion.conductor.nombre.toLowerCase().includes(busquedaCamiones.toLowerCase()))
-  );
-
-  const abrirEstadisticas = (camion) => {
-    setEstadisticasDialog({ open: true, camion });
+  const ejecutarEliminacion = async () => {
+    try {
+      await api.delete(`/camiones/${dialogoEliminar.id}`);
+      setCamiones(camiones.filter(camion => camion._id !== dialogoEliminar.id));
+      setSnackbar({
+        open: true,
+        message: 'Camión eliminado correctamente',
+        severity: 'success'
+      });
+      cerrarDialogoEliminar();
+      fetchData();
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.error || 'Error al eliminar el camión',
+        severity: 'error'
+      });
+    }
   };
-  
-  const cerrarEstadisticas = () => {
-    setEstadisticasDialog({ open: false, camion: null });
-  };
+
+  // Modificar la función de filtrado para incluir el filtro por estado
+  const camionesFiltrados = camiones.filter(camion => {
+    // Filtrar por texto de búsqueda (placa o ruta)
+    const coincideTexto = 
+      camion.placa.toLowerCase().includes(busquedaCamiones.toLowerCase()) ||
+      camion.ruta.toLowerCase().includes(busquedaCamiones.toLowerCase());
+    
+    // Filtrar por estado (activo, inactivo o todos)
+    const coincideEstado = 
+      filtroEstado === 'todos' || 
+      camion.estado === filtroEstado;
+    
+    // Debe cumplir ambas condiciones
+    return coincideTexto && coincideEstado;
+  });
 
   const camionesPaginados = camionesFiltrados.slice(
     (paginaCamiones - 1) * elementosPorPagina,
     paginaCamiones * elementosPorPagina
   );
 
-  
+  // Función para manejar el cambio de filtro de estado
+  const handleFiltroEstadoChange = (event) => {
+    setFiltroEstado(event.target.value);
+    setPaginaCamiones(1); // Resetear a la primera página al cambiar el filtro
+  };
 
   return (
     <Container className="admin-container">
@@ -282,19 +316,38 @@ const ejecutarEliminacion = async () => {
       </Typography>
   
       <Paper elevation={3} className="paper-style">
-        <TextField
-          label="Buscar por placa, ruta o conductor"
-          variant="outlined"
-          fullWidth
-          value={busquedaCamiones}
-          onChange={(e) => setBusquedaCamiones(e.target.value)}
-          className="text-field"
-        />
+        <Grid container spacing={2} style={{ marginBottom: '20px' }}>
+          <Grid item xs={12} sm={8}>
+            <TextField
+              label="Buscar por placa o ruta"
+              variant="outlined"
+              fullWidth
+              value={busquedaCamiones}
+              onChange={(e) => setBusquedaCamiones(e.target.value)}
+              className="text-field"
+            />
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <FormControl fullWidth variant="outlined">
+              <InputLabel>Filtrar por estado</InputLabel>
+              <Select
+                value={filtroEstado}
+                onChange={handleFiltroEstadoChange}
+                label="Filtrar por estado"
+              >
+                <MenuItem value="todos">Todos</MenuItem>
+                <MenuItem value="activo">Activos</MenuItem>
+                <MenuItem value="inactivo">Inactivos</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
+
         <Typography variant="h6" gutterBottom className="form-section-title">
           Formulario para Agregar Nuevo Camión
         </Typography>
         <Grid container spacing={2}>
-          <Grid item xs={12} sm={3}>
+          <Grid item xs={12} sm={4}>
             <TextField
               label="Placa"
               variant="outlined"
@@ -306,7 +359,7 @@ const ejecutarEliminacion = async () => {
               className="text-field"
             />
           </Grid>
-          <Grid item xs={12} sm={3}>
+          <Grid item xs={12} sm={4}>
             <TextField
               label="Ruta"
               variant="outlined"
@@ -331,302 +384,114 @@ const ejecutarEliminacion = async () => {
               <MenuItem value="inactivo">Inactivo</MenuItem>
             </Select>
           </Grid>
-          <Grid item xs={12} sm={3}>
-            <Select
-              value={nuevoCamion.conductor}
-              onChange={(e) => setNuevoCamion({ ...nuevoCamion, conductor: e.target.value })}
-              fullWidth
-              variant="outlined"
-              displayEmpty
-              error={!!errores.conductor}
-              className="text-field"
-            >
-              <MenuItem value="">Selecciona un conductor</MenuItem>
-              {conductoresDisponibles.map(conductor => (
-                <MenuItem key={conductor._id} value={conductor._id}>
-                  {conductor.nombre} - {conductor.email}
-                </MenuItem>
-              ))}
-            </Select>
-          </Grid>
           <Grid item xs={12} sm={2}>
-            <TextField
-              label="Hora inicio"
-              type="time"
-              variant="outlined"
-              fullWidth
-              value={nuevoCamion.horarioInicio}
-              onChange={(e) => setNuevoCamion({ ...nuevoCamion, horarioInicio: e.target.value })}
-              className="text-field"
-              InputLabelProps={{ shrink: true }}
-            />
-          </Grid>
-          <Grid item xs={12} sm={2}>
-            <TextField
-              label="Hora fin"
-              type="time"
-              variant="outlined"
-              fullWidth
-              value={nuevoCamion.horarioFin}
-              onChange={(e) => setNuevoCamion({ ...nuevoCamion, horarioFin: e.target.value })}
-              className="text-field"
-              InputLabelProps={{ shrink: true }}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <FormControl fullWidth>
-              <InputLabel>Días de trabajo</InputLabel>
-              <Select
-                multiple
-                value={nuevoCamion.diasTrabajo}
-                onChange={(e) => setNuevoCamion({ ...nuevoCamion, diasTrabajo: e.target.value })}
-                renderValue={(selected) => selected.map(dia => dia.charAt(0).toUpperCase() + dia.slice(1)).join(', ')}
-              >
-                <MenuItem value="lunes">Lunes</MenuItem>
-                <MenuItem value="martes">Martes</MenuItem>
-                <MenuItem value="miercoles">Miércoles</MenuItem>
-                <MenuItem value="jueves">Jueves</MenuItem>
-                <MenuItem value="viernes">Viernes</MenuItem>
-                <MenuItem value="sabado">Sábado</MenuItem>
-                <MenuItem value="domingo">Domingo</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid item xs={12} sm={1}>
             <Button variant="contained" className="button-primary" onClick={agregarCamion} fullWidth>
               Agregar
             </Button>
           </Grid>
         </Grid>
         <List>
-          {camionesPaginados.map(camion => (
-            <ListItem key={camion._id} divider>
-              <ListItemText
-                primary={`${camion.placa} - ${camion.ruta}`}
-                secondary={
-                  <>
-                    {`Estado: ${camion.estado} - Conductor: ${camion.conductor ? camion.conductor.nombre : 'Sin conductor'}`}
-                    <br />
-                    {`Horario: ${camion.horarioInicio || '05:00'} - ${camion.horarioFin || '22:00'}`}
-                    <br />
-                    {`Días: ${camion.diasTrabajo ? camion.diasTrabajo.map(dia => dia.charAt(0).toUpperCase() + dia.slice(1)).join(', ') : 'No especificados'}`}
-                  </>
-                }
-              />
-              <IconButton className="icon-button" onClick={() => abrirEstadisticas(camion)}>
-                <Assessment />
-              </IconButton>
-              <IconButton className="icon-button" onClick={() => setCamionEditando(camion)}>
-                <Edit />
-              </IconButton>
-              <IconButton className="icon-button" onClick={() => confirmarEliminacion(camion._id)}>
-                <Delete />
-              </IconButton>
-            </ListItem>
-          ))}
+          {camionesPaginados.length > 0 ? (
+            camionesPaginados.map(camion => (
+              <ListItem key={camion._id} divider>
+                <ListItemText
+                  primary={`${camion.placa} - ${camion.ruta}`}
+                  secondary={`Estado: ${camion.estado === 'activo' ? 'Activo' : 'Inactivo'}`}
+                />
+                <IconButton className="icon-button" onClick={() => setCamionEditando(camion)}>
+                  <Edit />
+                </IconButton>
+                <IconButton className="icon-button" onClick={() => confirmarEliminacion(camion._id)}>
+                  <Delete />
+                </IconButton>
+              </ListItem>
+            ))
+          ) : (
+            <Box p={2} textAlign="center">
+              <Typography variant="body1" color="textSecondary">
+                No se encontraron camiones con los filtros aplicados
+              </Typography>
+            </Box>
+          )}
         </List>
-        <Pagination
-          count={Math.ceil(camionesFiltrados.length / elementosPorPagina)}
-          page={paginaCamiones}
-          onChange={(e, pagina) => setPaginaCamiones(pagina)}
-          className="pagination"
-        />
+        {camionesFiltrados.length > elementosPorPagina && (
+          <Pagination
+            count={Math.ceil(camionesFiltrados.length / elementosPorPagina)}
+            page={paginaCamiones}
+            onChange={(e, value) => setPaginaCamiones(value)}
+            className="pagination"
+          />
+        )}
       </Paper>
-  
-      {/* Formulario de Edición de Camión */}
-      {camionEditando && (
-        <Paper elevation={3} className="paper-style">
-          <Typography variant="h5" gutterBottom>
-            Editar Camión
-          </Typography>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={3}>
-              <TextField
-                label="Placa"
-                variant="outlined"
-                fullWidth
-                value={camionEditando.placa}
-                onChange={(e) => setCamionEditando({ ...camionEditando, placa: e.target.value })}
-                error={!!errores.placa}
-                helperText={errores.placa}
-                className="text-field"
-              />
-            </Grid>
-            <Grid item xs={12} sm={3}>
-              <TextField
-                label="Ruta"
-                variant="outlined"
-                fullWidth
-                value={camionEditando.ruta}
-                onChange={(e) => setCamionEditando({ ...camionEditando, ruta: e.target.value })}
-                error={!!errores.ruta}
-                helperText={errores.ruta}
-                className="text-field"
-              />
-            </Grid>
-            <Grid item xs={12} sm={2}>
-              <Select
-                value={camionEditando.estado}
-                onChange={(e) => setCamionEditando({ ...camionEditando, estado: e.target.value })}
-                fullWidth
-                variant="outlined"
-                error={!!errores.estado}
-                className="text-field"
-              >
-                <MenuItem value="activo">Activo</MenuItem>
-                <MenuItem value="inactivo">Inactivo</MenuItem>
-              </Select>
-            </Grid>
-            <Grid item xs={12} sm={3}>
-              <Select
-                value={camionEditando.conductor || ''}
-                onChange={(e) => setCamionEditando({ ...camionEditando, conductor: e.target.value })}
-                fullWidth
-                variant="outlined"
-                displayEmpty
-                error={!!errores.conductor}
-                className="text-field"
-              >
-                <MenuItem value="">Selecciona un conductor</MenuItem>
-                {conductoresDisponibles.map(conductor => (
-                  <MenuItem key={conductor._id} value={conductor._id}>
-                    {conductor.nombre} - {conductor.email}
-                  </MenuItem>
-                ))}
-              </Select>
-            </Grid>
-            <Grid item xs={12} sm={2}>
-              <TextField
-                label="Hora inicio"
-                type="time"
-                variant="outlined"
-                fullWidth
-                value={camionEditando.horarioInicio || '05:00'}
-                onChange={(e) => setCamionEditando({ ...camionEditando, horarioInicio: e.target.value })}
-                className="text-field"
-                InputLabelProps={{ shrink: true }}
-              />
-            </Grid>
-            <Grid item xs={12} sm={2}>
-              <TextField
-                label="Hora fin"
-                type="time"
-                variant="outlined"
-                fullWidth
-                value={camionEditando.horarioFin || '22:00'}
-                onChange={(e) => setCamionEditando({ ...camionEditando, horarioFin: e.target.value })}
-                className="text-field"
-                InputLabelProps={{ shrink: true }}
-              />
-            </Grid>
-            {/* Nuevo campo: Días de trabajo */}
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Días de trabajo</InputLabel>
+
+      {/* Diálogo para editar camión */}
+      <Dialog open={!!camionEditando} onClose={() => setCamionEditando(null)}>
+        <DialogTitle>Editar Camión</DialogTitle>
+        <DialogContent>
+          {camionEditando && (
+            <Grid container spacing={2} style={{ marginTop: '8px' }}>
+              <Grid item xs={12}>
+                <TextField
+                  label="Placa"
+                  fullWidth
+                  value={camionEditando.placa}
+                  onChange={(e) => setCamionEditando({...camionEditando, placa: e.target.value})}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  label="Ruta"
+                  fullWidth
+                  value={camionEditando.ruta}
+                  onChange={(e) => setCamionEditando({...camionEditando, ruta: e.target.value})}
+                />
+              </Grid>
+              <Grid item xs={12}>
                 <Select
-                  multiple
-                  value={camionEditando.diasTrabajo || []} // Asegurar que sea array
-                  onChange={(e) => setCamionEditando({ 
-                    ...camionEditando, 
-                    diasTrabajo: Array.isArray(e.target.value) ? e.target.value : [] 
-                  })}
-                  renderValue={(selected) => selected.map(dia => dia.charAt(0).toUpperCase() + dia.slice(1)).join(', ')}
+                  value={camionEditando.estado}
+                  onChange={(e) => setCamionEditando({...camionEditando, estado: e.target.value})}
+                  fullWidth
                 >
-                  <MenuItem value="lunes">Lunes</MenuItem>
-                  <MenuItem value="martes">Martes</MenuItem>
-                  <MenuItem value="miercoles">Miércoles</MenuItem>
-                  <MenuItem value="jueves">Jueves</MenuItem>
-                  <MenuItem value="viernes">Viernes</MenuItem>
-                  <MenuItem value="sabado">Sábado</MenuItem>
-                  <MenuItem value="domingo">Domingo</MenuItem>
+                  <MenuItem value="activo">Activo</MenuItem>
+                  <MenuItem value="inactivo">Inactivo</MenuItem>
                 </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={1}>
-              <Button variant="contained" className="button-primary" onClick={() => actualizarCamion(camionEditando._id, camionEditando)}>
-                <Save />
-              </Button>
-            </Grid>
-            <Grid item xs={12} sm={1}>
-              <Button variant="contained" className="button-secondary" onClick={() => setCamionEditando(null)}>
-                <Cancel />
-              </Button>
-            </Grid>
-          </Grid>
-        </Paper>
-      )}
-  
-      {/* Diálogo de Confirmación para Eliminar */}
-      <Dialog
-        open={dialogoEliminar.open}
-        onClose={cerrarDialogoEliminar}
-      >
-        <DialogTitle>Confirmar Eliminación</DialogTitle>
-        <DialogContent>
-          ¿Estás seguro de que deseas eliminar este camión?
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={cerrarDialogoEliminar}>Cancelar</Button>
-          <Button onClick={ejecutarEliminacion} className="button-secondary">Eliminar</Button>
-        </DialogActions>
-      </Dialog>
-  
-      {/* Diálogo de Estadísticas */}
-      <Dialog
-        open={estadisticasDialog.open}
-        onClose={cerrarEstadisticas}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          Estadísticas del Camión
-          <IconButton
-            aria-label="close"
-            onClick={cerrarEstadisticas}
-            sx={{ position: 'absolute', right: 8, top: 8 }}
-          >
-            <Close />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
-          {estadisticasDialog.camion && (
-            <Grid container spacing={2}>
-              <Grid item xs={12}>
-                <Typography variant="h6">Información General</Typography>
-                <Typography>Placa: {estadisticasDialog.camion.placa}</Typography>
-                <Typography>Ruta: {estadisticasDialog.camion.ruta}</Typography>
-                <Typography>Estado: {estadisticasDialog.camion.estado}</Typography>
-              </Grid>
-              <Grid item xs={12}>
-                <Typography variant="h6">Horarios</Typography>
-                <Typography>Inicio: {estadisticasDialog.camion.horarioInicio || '05:00'}</Typography>
-                <Typography>Fin: {estadisticasDialog.camion.horarioFin || '22:00'}</Typography>
-                <Typography>
-                  Días de trabajo: {estadisticasDialog.camion.diasTrabajo?.map(dia => 
-                    dia.charAt(0).toUpperCase() + dia.slice(1)
-                  ).join(', ') || 'No especificados'}
-                </Typography>
-              </Grid>
-              <Grid item xs={12}>
-                <Typography variant="h6">Conductor Asignado</Typography>
-                <Typography>
-                  {estadisticasDialog.camion.conductor ? 
-                    `${estadisticasDialog.camion.conductor.nombre} - ${estadisticasDialog.camion.conductor.email}` : 
-                    'Sin conductor asignado'}
-                </Typography>
               </Grid>
             </Grid>
           )}
         </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCamionEditando(null)}>Cancelar</Button>
+          <Button 
+            onClick={() => actualizarCamion(camionEditando._id, camionEditando)}
+            color="primary"
+          >
+            Guardar
+          </Button>
+        </DialogActions>
       </Dialog>
 
-      {/* Snackbar para mensajes */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
+      {/* Diálogo para confirmar eliminación */}
+      <Dialog open={dialogoEliminar.open} onClose={cerrarDialogoEliminar}>
+        <DialogTitle>Confirmar Eliminación</DialogTitle>
+        <DialogContent>
+          ¿Está seguro que desea eliminar este camión? Esta acción no se puede deshacer.
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cerrarDialogoEliminar}>Cancelar</Button>
+          <Button onClick={ejecutarEliminacion} color="error">Eliminar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar para notificaciones */}
+      <Snackbar 
+        open={snackbar.open} 
+        autoHideDuration={6000} 
+        onClose={() => setSnackbar({...snackbar, open: false})}
       >
-        <Alert onClose={() => setSnackbar({ ...snackbar, open: false })} severity={snackbar.severity}>
+        <Alert 
+          onClose={() => setSnackbar({...snackbar, open: false})} 
+          severity={snackbar.severity}
+        >
           {snackbar.message}
         </Alert>
       </Snackbar>

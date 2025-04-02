@@ -38,10 +38,28 @@ const GestionIncidencias = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Función para ordenar incidencias por el número de ruta del camión (de menor a mayor)
+  const ordenarIncidenciasPorRuta = (incidenciasArray) => {
+    return [...incidenciasArray].sort((a, b) => {
+      // Si alguno no tiene camión o ruta, ponerlo al final
+      if (!a.camionId?.ruta) return 1;
+      if (!b.camionId?.ruta) return -1;
+      
+      // Extraer la parte numérica de la ruta si existe
+      const numA = a.camionId.ruta.match(/(\d+)/)?.[1] || '0';
+      const numB = b.camionId.ruta.match(/(\d+)/)?.[1] || '0';
+      
+      // Convertir a números enteros y comparar (orden ascendente)
+      return parseInt(numA, 10) - parseInt(numB, 10);
+    });
+  };
+
   const cargarIncidencias = async () => {
     try {
       const response = await api.get('/admin/incidencias');
-      setIncidencias(response.data);
+      // Ordenar las incidencias por ruta antes de establecerlas en el estado
+      const incidenciasOrdenadas = ordenarIncidenciasPorRuta(response.data);
+      setIncidencias(incidenciasOrdenadas);
     } catch (error) {
       setSnackbar({
         open: true,
